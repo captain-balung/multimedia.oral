@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 英語發音教練</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; text-align: center; }
+    .correct { color: green; font-weight: bold; }
+    .incorrect { color: red; text-decoration: underline; }
+    .sentence-box { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; font-size: 16px; }
+  </style>
+</head>
+<body>
+
+  <h1>🗣️ AI 英語發音教練</h1>
+  
+  <select id="themeSelect">
+    <option value="日本旅遊通關">日本旅遊通關</option>
+    <option value="餐廳點餐">餐廳點餐</option>
+    <option value="飯店入住">飯店入住</option>
+    <option value="機場購物">機場購物</option>
+    <option value="職場會議">職場會議</option>
+    <option value="日常問候">日常問候</option>
+    <option value="問路導航">問路導航</option>
+    <option value="醫院就診">醫院就診</option>
+    <option value="科技新聞探討">科技新聞探討</option>
+    <option value="興趣與嗜好">興趣與嗜好</option>
+  </select>
+  <button onclick="fetchSentences()">開始產生題目</button>
+
+  <div id="loading" style="display:none;">Gemini 正在為您即時出題中...</div>
+
+  <div id="quizArea" class="sentence-box" style="display:none;">
+    <h3 id="levelIndicator"></h3>
+    <h2 id="englishSentence"></h2>
+    <p id="chineseTranslation" style="color: #666;"></p>
+    
+    <button onclick="playTTS()">🔊 電腦示範</button>
+    <button onclick="startASR()">🎙️ 換我唸唸看</button>
+    
+    <p>你的發音結果：</p>
+    <div id="resultBox" style="font-size: 1.2rem; margin-top: 10px;"></div>
+    
+    <button id="nextBtn" onclick="nextQuestion()" style="display:none; margin-top: 20px;">下一題 ➡️</button>
+  </div>
+
+  <script>
+    // 請替換為你 GAS 部署後取得的網址
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbwxex3QoGFBH8RquRgo84Afb-SnB3TLtq0GU2NJpA50rBv5pxrbrEIK-wZsUZQIgTuw5Q/exec';
+    
+    let questions = [];
+    let currentIndex = 0;
+
+    // 1. 呼叫 GAS (Gemini) 取得題目
+    async function fetchSentences() {
+      const theme = document.getElementById('themeSelect').value;
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('quizArea').style.display = 'none';
+
+      try {
+        const response = await fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify({ theme: theme })
+        });
+        questions = await response.json();
+        currentIndex = 0;
+        showQuestion();
+      } catch (error) {
+        alert('取得題目失敗：' + error);
+      } finally {
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    // 2. 顯示當前題目
+    function showQuestion() {
+      if (currentIndex >= questions.length) {
+        alert("恭喜！你已完成五個等級的挑戰！");
+        document.getElementById('quizArea').style.display = 'none';
+        return;
+      }
+      
+      const q = questions[currentIndex];
+      document.getElementById('quizArea').style.display = 'block';
+      document.getElementById('levelIndicator').innerText = `Level ${q.level}`;
+      document.getElementById('englishSentence').innerText = q.en;
+      document.getElementById('chineseTranslation').innerText = q.zh;
+      document.getElementById('resultBox').innerHTML = '';
+      document.getElementById('nextBtn').style.display = 'none';
+    }
+
+    // 3. Web Speech API: Text-to-Speech (TTS)
+    function playTTS() {
+      const text = document.getElementById('englishSentence').innerText;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // 4. Web Speech API: Automatic Speech Recognition (ASR)
+    function startASR() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("你的瀏覽器不支援語音辨識，請使用 Chrome 或 Edge。");
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      
+      document.getElementById('resultBox').innerHTML = "<i>聆聽中...</i>";
+      
+      recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript;
+        compareSentences(transcript);
+      };
+
+      recognition.onerror = function(event) {
+        document.getElementById('resultBox').innerHTML = "<i>無法辨識，請再試一次。</i>";
+      };
+
+      recognition.start();
+    }
+
+    // 5. 比對邏輯：判斷哪些單字唸對，哪些唸錯
+    function compareSentences(userSpeech) {
+      const originalText = document.getElementById('englishSentence').innerText;
+      
+      // 將句子轉為小寫並移除標點符號以利比對
+      const cleanString = (str) => str.toLowerCase().replace(/[^\w\s]|_/g, "");
+      
+      const originalWords = cleanString(originalText).split(" ");
+      const userWords = cleanString(userSpeech).split(" ");
+      
+      let htmlResult = "";
+      
+      // 簡單比對：檢查原句的單字是否有出現在使用者的發音紀錄中
+      originalWords.forEach(word => {
+        if (userWords.includes(word)) {
+          htmlResult += `<span class="correct">${word} </span>`;
+        } else {
+          htmlResult += `<span class="incorrect">${word} </span>`;
+        }
+      });
+      
+      document.getElementById('resultBox').innerHTML = htmlResult + `<br><small>(你唸的是: ${userSpeech})</small>`;
+      document.getElementById('nextBtn').style.display = 'inline-block';
+    }
+
+    function nextQuestion() {
+      currentIndex++;
+      showQuestion();
+    }
+  </script>
+</body>
+</html>
